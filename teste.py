@@ -2,18 +2,75 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import openpyxl
-import requests
-import time
-import pyautogui
-from time import sleep
+from selenium.webdriver.common.alert import Alert
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.alert import Alert
+import openpyxl
+import time
+import os
+from time import sleep
+import glob
+import pyautogui
+import requests
 
+API_KEY = "62a06978600e98d3cbf430ffe18ea254"
+
+def capturar_regiao_captcha(x1, y1, x2, y2, output_path):
+    try:
+        largura = x2 - x1  # Calcula a largura do retângulo
+        altura = y2 - y1   # Calcula a altura do retângulo
+        print(f"Capturando região com largura={largura} e altura={altura}")
+        
+        # Captura apenas a região especificada
+        screenshot = pyautogui.screenshot(region=(x1, y1, largura, altura))
+        screenshot.save(output_path)
+        print(f"CAPTCHA salvo em: {output_path}")
+        return output_path
+    except Exception as e:
+        print(f"Erro ao capturar a região do CAPTCHA: {e}")
+        return None
+    
+def resolver_captcha_2captcha(image_path):
+    try:
+        # Passo 1: Enviar a imagem do CAPTCHA
+        print("Enviando CAPTCHA para o 2Captcha...")
+        with open(image_path, 'rb') as img_file:
+            files = {'file': img_file}
+            response = requests.post(
+                f"http://2captcha.com/in.php?key={API_KEY}&method=post",
+                files=files
+            )
+        
+        if response.status_code != 200 or "OK" not in response.text:
+            raise Exception("Erro ao enviar o CAPTCHA para o 2Captcha")
+        
+        captcha_id = response.text.split('|')[1]
+        print(f"CAPTCHA enviado. ID: {captcha_id}")
+        
+        # Passo 2: Aguardar e consultar o resultado
+        for _ in range(30):  # Tenta por até 30 segundos
+            time.sleep(5)  # Espera 5 segundos entre consultas
+            result_response = requests.get(f"http://2captcha.com/res.php?key={API_KEY}&action=get&id={captcha_id}")
+            if result_response.text == "CAPCHA_NOT_READY":
+                print("CAPTCHA ainda não está pronto, aguardando...")
+                continue
+            
+            if "OK" in result_response.text:
+                captcha_text = result_response.text.split('|')[1]
+                print(f"CAPTCHA resolvido: {captcha_text}")
+                return captcha_text
+            
+        raise Exception("Tempo esgotado para resolver o CAPTCHA")
+    except Exception as e:
+        print(f"Erro ao resolver CAPTCHA com 2Captcha: {e}")
+        return None
+    
 def pegar_débitos_sp():
+    # Configura o caminho da pasta de download automático
+    download_path = os.path.abspath("Boletos")
+    os.makedirs(download_path, exist_ok=True)
 
-
+    # Configuração das opções do Chrome
     chrome_options = Options()
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("--no-sandbox")
@@ -21,6 +78,17 @@ def pegar_débitos_sp():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--ignore-certificate-errors")
 
+    # Configura o download automático
+    prefs = {
+        "download.default_directory": download_path,  # Define a pasta de downloads
+        "download.prompt_for_download": False,  # Não perguntar onde salvar
+        "download.directory_upgrade": True,
+        "safebrowsing.enabled": True,  # Proteção contra downloads perigosos
+        "profile.default_content_settings.popups": 0
+    }
+    chrome_options.add_experimental_option("prefs", prefs)
+
+    # Inicializa o driver
     service = Service()
     driver = webdriver.Chrome(service=service, options=chrome_options)
     driver.get('https://senhawebsts.prefeitura.sp.gov.br/Account/Login.aspx?ReturnUrl=%2f%3fwa%3dwsignin1.0%26wtrealm%3dhttps%253a%252f%252fduc.prefeitura.sp.gov.br%252fportal%252f%26wctx%3drm%253d0%2526id%253dpassive%2526ru%253d%25252fportal%25252f%26wct%3d2024-12-16T11%253a48%253a11Z&wa=wsignin1.0&wtrealm=https%3a%2f%2fduc.prefeitura.sp.gov.br%2fportal%2f&wctx=rm%3d0%26id%3dpassive%26ru%3d%252fportal%252f&wct=2024-12-16T11%3a48%253a11Z')
@@ -33,6 +101,7 @@ def pegar_débitos_sp():
         login = linha[4].value
         senha = linha[5].value
         ccm = linha[3].value
+        nome_empresa = linha[0].value
 
         # Preencher Login
         clicar_login = WebDriverWait(driver, 5).until(
@@ -58,8 +127,6 @@ def pegar_débitos_sp():
 
         sleep(2)
 
-        
-
         botao_ccm = WebDriverWait(driver,5).until(
             EC.element_to_be_clickable((By.XPATH,"//input[@name='ctl00$ctl00$ConteudoPrincipal$ContentPlaceHolder1$txtCCM']"))
         )
@@ -74,6 +141,13 @@ def pegar_débitos_sp():
 
         botao_OK.click()
 
+        sleep(3)
+        campo = WebDriverWait(driver,5).until(
+            EC.element_to_be_clickable((By.XPATH,"//input[@id='ans']"))
+        )
+        campo.click()
+        campo.send_keys('1234')
+
         time.sleep(15)
 
         #print(driver.page_source)
@@ -81,61 +155,47 @@ def pegar_débitos_sp():
         driver.switch_to.default_content()
 
         try:
-            wait = WebDriverWait(driver, 10)
+            pagar = WebDriverWait(driver,5).until(
+                EC.element_to_be_clickable((By.XPATH,"//input[@name='ctl00$ctl00$ConteudoPrincipal$ContentPlaceHolder1$btnPagar']"))
+            )
 
-            # Define as mensagens esperadas (certifique-se de que estão corretas)
-            mensagens_esperadas = [
-                "Não há informações registradas para sugestões de recolhimentos de ISS.",
-                "Não há informações registradas para sugestões de recolhimentos de TFE.",
-                "Não há informações registradas para sugestões de recolhimentos de TFA.",
-                "Não há informações registradas para sugestões de recolhimentos de TRSS."
-            ]
+            pagar.click()
+            try:
+                alert = Alert(driver)
+                alert.accept()  # Fecha o pop-up clicando em "OK"
 
-            # Lista para armazenar os resultados da verificação
-            mensagens_encontradas = []
+            except Exception:
+                print("Nenhum alerta foi encontrado.")
 
-            # Procura pelos elementos no DOM
-            for mensagem in mensagens_esperadas:
-                try:
-                    # Localiza o elemento `<span>` contendo o texto (com normalize-space)
-                    elemento = WebDriverWait(driver, 10).until(
-                        EC.presence_of_element_located((By.XPATH, f"//span[@class='rotuloCampo' and contains(normalize-space(), '{mensagem}')]"))
-                    )
-                    print(f"Encontrado: {elemento.text}")
-                    mensagens_encontradas.append(True)
-                except Exception:
-                    print(f"Não encontrado: {mensagem}")
-                    mensagens_encontradas.append(False)
-
-            # Verificação final
-            if all(mensagens_encontradas):
-                print("A empresa NÃO possui débitos.")
-            else:
-                print("A empresa POSSUI débitos.")
-                
-                pagar = WebDriverWait(driver,5).until(
-                    EC.element_to_be_clickable((By.XPATH,"//input[@name='ctl00$ctl00$ConteudoPrincipal$ContentPlaceHolder1$btnPagar']"))
-                )
-
-                pagar.click()
-                try:
-                    alert = Alert(driver)
-                    alert.accept()  # Fecha o pop-up clicando em "OK"
-
-                except:
-                    print("Nenhum alerta foi encontrado.")
-
-                    
-
-
-                
+        
         except Exception as e:
-            print(f"Ocorreu um erro: {e}")
+            print('Empresa sem débito')
+            continue
+        arquivo_antigo = aguardar_download(download_path)
+        if arquivo_antigo:
+            novo_nome = f"{nome_empresa}.pdf"  # Nome da empresa + extensão
+            novo_caminho = os.path.join(download_path, novo_nome)
+            os.rename(arquivo_antigo, novo_caminho)
+            print(f"Arquivo salvo como: {novo_nome}")
+        else:
+            print("Nenhum arquivo encontrado para renomear.")
 
-        time.sleep(1)
+    
+        time.sleep(10)
         
         
         driver.quit()
+
+def aguardar_download(diretorio, timeout=60):
+    """ Aguarda o download do arquivo terminar e retorna o caminho do arquivo baixado. """
+    tempo_inicial = time.time()
+    while time.time() - tempo_inicial < timeout:
+        arquivos = glob.glob(os.path.join(diretorio, "*.pdf"))  # Busca arquivos PDF
+        arquivos_em_andamento = glob.glob(os.path.join(diretorio, "*.crdownload"))  # Arquivos incompletos
+        if arquivos and not arquivos_em_andamento:
+            return arquivos[0]  # Retorna o primeiro arquivo PDF encontrado
+        time.sleep(1)
+    return None
 
 # Executa a função
 pegar_débitos_sp()

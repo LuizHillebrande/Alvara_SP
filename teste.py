@@ -15,6 +15,34 @@ import requests
 
 API_KEY = "62a06978600e98d3cbf430ffe18ea254"
 
+def registrar_empresa_sem_debitos(nome_empresa, caminho_arquivo="empresas_sem_debitos.xlsx"):
+    # Verifica se o arquivo já existe
+    if not os.path.exists(caminho_arquivo):
+        # Cria um novo workbook
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Empresas Sem Débitos"
+        # Adiciona cabeçalhos
+        ws.append(["Nome da Empresa", "Mensagem"])
+    else:
+        # Carrega o arquivo existente
+        wb = openpyxl.load_workbook(caminho_arquivo)
+        ws = wb.active
+
+    # Adiciona os dados da empresa
+    ws.append([nome_empresa, "empresa sem débitos"])
+
+    # Salva o arquivo
+    wb.save(caminho_arquivo)
+    print(f"Empresa '{nome_empresa}' registrada no Excel.")
+
+def capturar_tela_inteira(caminho_salvar):
+    # Captura a tela inteira
+    screenshot = pyautogui.screenshot()
+    # Salva a imagem no caminho especificado
+    screenshot.save(caminho_salvar)
+
+
 def capturar_regiao_captcha(x1, y1, x2, y2, output_path):
     try:
         largura = x2 - x1  # Calcula a largura do retângulo
@@ -96,94 +124,157 @@ def pegar_débitos_sp():
 
     wb = openpyxl.load_workbook('dados_sp.xlsx')
     sheet_wb = wb['São Paulo']
+    try:
+        for indice, linha in enumerate(sheet_wb.iter_rows(min_row=9, max_row=10)):  # Ajuste o intervalo conforme necessário
+            login = linha[4].value
+            senha = linha[5].value
+            ccm = linha[3].value
+            nome_empresa = linha[0].value
 
-    for indice, linha in enumerate(sheet_wb.iter_rows(min_row=10, max_row=10)):  # Ajuste o intervalo conforme necessário
-        login = linha[4].value
-        senha = linha[5].value
-        ccm = linha[3].value
-        nome_empresa = linha[0].value
+            # Preencher Login
+            clicar_login = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, "//input[@name='ctl00$ctl00$formBody$formBody$txtUser']"))
+            )
+            clicar_login.send_keys(str(login))
 
-        # Preencher Login
-        clicar_login = WebDriverWait(driver, 5).until(
-            EC.element_to_be_clickable((By.XPATH, "//input[@name='ctl00$ctl00$formBody$formBody$txtUser']"))
-        )
-        clicar_login.send_keys(str(login))
+            sleep(2)
 
-        sleep(2)
+            # Preencher Senha
+            clicar_senha = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, "//input[@name='ctl00$ctl00$formBody$formBody$txtPassword']"))
+            )
+            clicar_senha.send_keys(str(senha))
+            
+            try:
+                # Captura a região do CAPTCHA
+                captcha_path = "captcha_regiao.png"
+                capturar_regiao_captcha(428, 455, 780, 600, captcha_path)  # regiao exata
+                
+                # Resolver o CAPTCHA via 2Captcha
+                captcha_resposta = resolver_captcha_2captcha(captcha_path)
+                print(captcha_resposta)
+                if not captcha_resposta:
+                    print("Falha ao resolver o CAPTCHA.")
+                    return
+                
+                # Preencher o formulário
+                campo_captcha = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.XPATH,"//input[@name='ctl00$ctl00$formBody$formBody$wucRecaptcha1$txtValidacao']"))
+                )
+                campo_captcha.click()
+                campo_captcha.send_keys(captcha_resposta)  
+                
+                print("CAPTCHA preenchido com sucesso.")
+                
+                botao_submit = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.XPATH, "//input[@name='ctl00$ctl00$formBody$formBody$btnLogin']"))
+                )
+                botao_submit.click()
 
-        # Preencher Senha
-        clicar_senha = WebDriverWait(driver, 5).until(
-            EC.element_to_be_clickable((By.XPATH, "//input[@name='ctl00$ctl00$formBody$formBody$txtPassword']"))
-        )
-        clicar_senha.send_keys(str(senha))
+            except Exception as e:
+                print('Captcha não encontrado')
+            
+            
+            sleep(3)
+            botao_mais = WebDriverWait(driver,5).until(
+                EC.element_to_be_clickable((By.XPATH,"//img[@id='img_maisTwo']"))
+            )
+            botao_mais.click()
 
-        sleep(10)
-        
-        
-        botao_mais = WebDriverWait(driver,5).until(
-            EC.element_to_be_clickable((By.XPATH,"//img[@id='img_maisTwo']"))
-        )
-        botao_mais.click()
+            sleep(1)
 
-        sleep(2)
+            botao_ccm = WebDriverWait(driver,5).until(
+                EC.element_to_be_clickable((By.XPATH,"//input[@name='ctl00$ctl00$ConteudoPrincipal$ContentPlaceHolder1$txtCCM']"))
+            )
+            botao_ccm.click()
+            botao_ccm.send_keys(ccm)
 
-        botao_ccm = WebDriverWait(driver,5).until(
-            EC.element_to_be_clickable((By.XPATH,"//input[@name='ctl00$ctl00$ConteudoPrincipal$ContentPlaceHolder1$txtCCM']"))
-        )
-        botao_ccm.click()
-        botao_ccm.send_keys(ccm)
+            sleep(1)
 
-        sleep(2)
-
-        botao_OK = WebDriverWait(driver,5).until(
-            EC.element_to_be_clickable((By.XPATH,"//input[@name='ctl00$ctl00$ConteudoPrincipal$ContentPlaceHolder1$btnOKDAMSP']"))
-        )
-
-        botao_OK.click()
-
-        sleep(3)
-        campo = WebDriverWait(driver,5).until(
-            EC.element_to_be_clickable((By.XPATH,"//input[@id='ans']"))
-        )
-        campo.click()
-        campo.send_keys('1234')
-
-        time.sleep(15)
-
-        #print(driver.page_source)
-
-        driver.switch_to.default_content()
-
-        try:
-            pagar = WebDriverWait(driver,5).until(
-                EC.element_to_be_clickable((By.XPATH,"//input[@name='ctl00$ctl00$ConteudoPrincipal$ContentPlaceHolder1$btnPagar']"))
+            botao_OK = WebDriverWait(driver,5).until(
+                EC.element_to_be_clickable((By.XPATH,"//input[@name='ctl00$ctl00$ConteudoPrincipal$ContentPlaceHolder1$btnOKDAMSP']"))
             )
 
-            pagar.click()
+            botao_OK.click()
+
+            sleep(3)
+
+            
             try:
-                alert = Alert(driver)
-                alert.accept()  # Fecha o pop-up clicando em "OK"
+                # Caminho onde a imagem do CAPTCHA será salva
+                caminho_captcha = "captcha_tela_inteira.png"
+                
+                
+                capturar_regiao_captcha(0, 0, 515, 250, caminho_captcha)
+                
+                # Resolver o CAPTCHA via 2Captcha
+                captcha_resposta_2 = resolver_captcha_2captcha(caminho_captcha)
+                print(captcha_resposta_2)
+                
+                if not captcha_resposta_2:
+                    print("Falha ao resolver o CAPTCHA.")
+                    return
+            except Exception as e:
+                print(f"Ocorreu um erro: {e}")
 
-            except Exception:
-                print("Nenhum alerta foi encontrado.")
+            campo = WebDriverWait(driver,5).until(
+                EC.element_to_be_clickable((By.XPATH,"//input[@id='ans']"))
+            )
+            campo.click()
+            campo.send_keys(captcha_resposta_2)
+            
+
+            submit = WebDriverWait(driver,5).until(
+                EC.element_to_be_clickable((By.XPATH,"//button[@id='jar']"))
+            )
+            submit.click()
+            
+
+            #print(driver.page_source)
+
+            driver.switch_to.default_content()
+            sleep(5)
+            try:
+                pagar = WebDriverWait(driver,5).until(
+                    EC.element_to_be_clickable((By.XPATH,"//input[@name='ctl00$ctl00$ConteudoPrincipal$ContentPlaceHolder1$btnPagar']"))
+                )
+
+                pagar.click()
+                try:
+                    alert = Alert(driver)
+                    alert.accept()  # Fecha o pop-up clicando em "OK"
+
+                except Exception:
+                    print("Nenhum alerta foi encontrado.")
+                
+                sleep(2)
+                pyautogui.hotkey('ctrl', 'w')
+
+                WebDriverWait(driver, 10).until(lambda driver: len(driver.window_handles) > 0)
+
+                # Alternar para a última janela que permanece aberta
+                driver.switch_to.window(driver.window_handles[-1])
+                driver.get('https://senhawebsts.prefeitura.sp.gov.br/Account/Login.aspx?ReturnUrl=%2f%3fwa%3dwsignin1.0%26wtrealm%3dhttps%253a%252f%252fduc.prefeitura.sp.gov.br%252fportal%252f%26wctx%3drm%253d0%2526id%253dpassive%2526ru%253d%25252fportal%25252f%26wct%3d2024-12-16T11%253a48%253a11Z&wa=wsignin1.0&wtrealm=https%3a%2f%2fduc.prefeitura.sp.gov.br%2fportal%2f&wctx=rm%3d0%26id%3dpassive%26ru%3d%252fportal%252f&wct=2024-12-16T11%3a48%253a11Z')
+            
+            except Exception as e:
+                nome_empresa = linha[0].value  # Captura o nome da empresa na planilha original
+                print(f"Empresa '{nome_empresa}' sem débitos.")
+                registrar_empresa_sem_debitos(nome_empresa)
+                driver.get('https://senhawebsts.prefeitura.sp.gov.br/Account/Login.aspx?ReturnUrl=%2f%3fwa%3dwsignin1.0%26wtrealm%3dhttps%253a%252f%252fduc.prefeitura.sp.gov.br%252fportal%252f%26wctx%3drm%253d0%2526id%253dpassive%2526ru%253d%25252fportal%25252f%26wct%3d2024-12-16T11%253a48%253a11Z&wa=wsignin1.0&wtrealm=https%3a%2f%2fduc.prefeitura.sp.gov.br%2fportal%2f&wctx=rm%3d0%26id%3dpassive%26ru%3d%252fportal%252f&wct=2024-12-16T11%3a48%253a11Z')
+
+            arquivo_antigo = aguardar_download(download_path)
+            if arquivo_antigo:
+                novo_nome = f"{nome_empresa}.pdf"  # Nome da empresa + extensão
+                novo_caminho = os.path.join(download_path, novo_nome)
+                os.rename(arquivo_antigo, novo_caminho)
+                print(f"Arquivo salvo como: {novo_nome}")
+            else:
+                print("Nenhum arquivo encontrado para renomear.")
 
         
-        except Exception as e:
-            print('Empresa sem débito')
-            continue
-        arquivo_antigo = aguardar_download(download_path)
-        if arquivo_antigo:
-            novo_nome = f"{nome_empresa}.pdf"  # Nome da empresa + extensão
-            novo_caminho = os.path.join(download_path, novo_nome)
-            os.rename(arquivo_antigo, novo_caminho)
-            print(f"Arquivo salvo como: {novo_nome}")
-        else:
-            print("Nenhum arquivo encontrado para renomear.")
-
-    
-        time.sleep(10)
+            time.sleep(5)
         
-        
+    finally:
         driver.quit()
 
 def aguardar_download(diretorio, timeout=60):

@@ -10,6 +10,12 @@ import glob
 
 API_KEY = "62a06978600e98d3cbf430ffe18ea254"
 
+def capturar_tela_inteira(caminho_salvar):
+    # Captura a tela inteira
+    screenshot = pyautogui.screenshot()
+    # Salva a imagem no caminho especificado
+    screenshot.save(caminho_salvar)
+
 def capturar_regiao_captcha(x1, y1, x2, y2, output_path):
     try:
         largura = x2 - x1  # Calcula a largura do retângulo

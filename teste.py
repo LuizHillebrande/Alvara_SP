@@ -13,9 +13,29 @@ import glob
 import pyautogui
 import requests
 from selenium.common.exceptions import TimeoutException
+import threading
+import customtkinter as ctk
 
 
 API_KEY = "62a06978600e98d3cbf430ffe18ea254"
+
+ultima_linha_processada = ""
+
+def ler_progresso_sao_paulo():
+    if os.path.exists("progresso_sao_paulo.txt"):
+        with open("progresso_sao_paulo.txt", "r") as file:
+            return int(file.read().strip())
+    return 2  # Se não houver progresso registrado, começa da linha 2
+
+# Função para salvar o progresso de São Paulo
+def salvar_progresso_sao_paulo(linha):
+    with open("progresso_sao_paulo.txt", "w") as file:
+        file.write(str(linha))
+
+# Função para atualizar a última linha processada de São Paulo
+def atualizar_ultima_linha_sao_paulo():
+    ultima_linha_sao_paulo = ler_progresso_sao_paulo()
+    ultima_sao_paulo.configure(text=f"(Última linha processada: {ultima_linha_sao_paulo})")
 
 def registrar_empresa_sem_debitos(nome_empresa, caminho_arquivo="empresas_sem_debitos.xlsx"):
     # Verifica se o arquivo já existe
@@ -95,6 +115,98 @@ def resolver_captcha_2captcha(image_path):
         print(f"Erro ao resolver CAPTCHA com 2Captcha: {e}")
         return None
     
+def verificar_captcha_2_completo(driver,caminho_captcha):
+    try:
+        # Caminho onde a imagem do CAPTCHA será salva
+        caminho_captcha = "captcha_tela_inteira.png"
+
+        capturar_regiao_captcha(0, 0, 515, 250, caminho_captcha)
+        
+        # Resolver o CAPTCHA via 2Captcha
+        captcha_resposta_2 = resolver_captcha_2captcha(caminho_captcha)
+        print(f"Resposta do CAPTCHA: {captcha_resposta_2}")
+        
+        if not captcha_resposta_2:
+            print("Falha ao resolver o CAPTCHA.")
+            return
+    except Exception as e:
+        print(f"Ocorreu um erro ao resolver o CAPTCHA: {e}")
+
+    # Enviar a resposta para o campo
+    campo = WebDriverWait(driver, 5).until(
+        EC.element_to_be_clickable((By.XPATH, "//input[@id='ans']"))
+    )
+    campo.clear()  # Limpa qualquer valor anterior
+    campo.send_keys(captcha_resposta_2)
+
+    # Submeter o CAPTCHA
+    submit = WebDriverWait(driver, 5).until(
+        EC.element_to_be_clickable((By.XPATH, "//button[@id='jar']"))
+    )
+    submit.click()
+    
+    sleep(3)
+    # Verificar se o CAPTCHA foi aceito ou deu erro
+    try:
+        print('Verificando possível erro no captcha 2')
+        # Espera até 5 segundos pela mensagem de erro
+        mensagem_erro = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, "//body[contains(text(), 'Você digitou o código errado.')]"))
+        ) #ta certo!!
+        print("O CAPTCHA foi digitado incorretamente. Tentando novamente...")
+
+        # Se a mensagem de erro for encontrada, repetir o processo
+        capturar_regiao_captcha(0, 0, 515, 250, caminho_captcha)
+        captcha_resposta_2 = resolver_captcha_2captcha(caminho_captcha)
+        print(f"Nova resposta do CAPTCHA: {captcha_resposta_2}")
+        
+        campo = WebDriverWait(driver, 5).until(
+            EC.element_to_be_clickable((By.XPATH, "//input[@id='ans']"))
+        )
+        campo.clear()
+        campo.send_keys(captcha_resposta_2)
+        print('Captcha 2 preenchido')
+        
+        try:
+            # Reencontrar o botão de envio antes de clicar
+            submit = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[@id='jar']"))
+            )
+            submit.click()
+
+            try:
+                print('Verificando possível erro pela 3 vez no captcha 2')
+                # Espera até 5 segundos pela mensagem de erro
+                mensagem_erro = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, "//body[contains(text(), 'Você digitou o código errado.')]"))
+                ) #ta certo!!
+                print("O CAPTCHA foi digitado incorretamente. Tentando novamente...")
+
+                # Se a mensagem de erro for encontrada, repetir o processo
+                capturar_regiao_captcha(0, 0, 515, 250, caminho_captcha)
+                captcha_resposta_2 = resolver_captcha_2captcha(caminho_captcha)
+                print(f"Nova resposta do CAPTCHA: {captcha_resposta_2}")
+                
+                campo = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.XPATH, "//input[@id='ans']"))
+                )
+                campo.clear()
+                campo.send_keys(captcha_resposta_2)
+                print('Captcha 2 preenchido pela 3 vez')
+
+                submit = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[@id='jar']"))
+                )
+                submit.click()
+            except Exception:
+                print('Erro nao encontrado pela 3 vez')
+
+        except Exception:
+            print("Elemento do botão de envio se tornou obsoleto. Tentando localizá-lo novamente...")
+        
+    except TimeoutException:
+        print("CAPTCHA resolvido com sucesso.")
+
 def pegar_débitos_sp():
     # Configura o caminho da pasta de download automático
     download_path = os.path.abspath("Boletos")
@@ -127,7 +239,8 @@ def pegar_débitos_sp():
     sheet_wb = wb['São Paulo']
 
     try:
-        for indice, linha in enumerate(sheet_wb.iter_rows(min_row=9, max_row=10)):  # Ajuste o intervalo conforme necessário
+        ultima_linha_sao_paulo = ler_progresso_sao_paulo()
+        for indice, linha in enumerate(sheet_wb.iter_rows(min_row=ultima_linha_sao_paulo, max_row=300)):  # Ajuste o intervalo conforme necessário
             driver.get('https://senhawebsts.prefeitura.sp.gov.br/Account/Login.aspx?ReturnUrl=%2f%3fwa%3dwsignin1.0%26wtrealm%3dhttps%253a%252f%252fduc.prefeitura.sp.gov.br%252fportal%252f%26wctx%3drm%253d0%2526id%253dpassive%2526ru%253d%25252fportal%25252f%26wct%3d2024-12-16T11%253a48%253a11Z&wa=wsignin1.0&wtrealm=https%3a%2f%2fduc.prefeitura.sp.gov.br%2fportal%2f&wctx=rm%3d0%26id%3dpassive%26ru%3d%252fportal%252f&wct=2024-12-16T11%3a48%253a11Z')
             sleep(2)
             login = linha[4].value
@@ -209,6 +322,17 @@ def pegar_débitos_sp():
                     continue
 
             sleep(3)
+
+            try:
+                elemento_presente = WebDriverWait(driver, 4).until(
+                    EC.presence_of_element_located((By.XPATH, "//input[@id='ans']"))
+                )
+                
+                # Caso o elemento seja clicável, executa a função
+                caminho_captcha = "captcha_tela_inteira.png"  # Defina o caminho do captcha conforme necessário
+                verificar_captcha_2_completo(driver, caminho_captcha)
+            except Exception as e:
+                print("Elemento não encontrado ou não está clicável. Erro:", str(e))
             
             botao_mais = WebDriverWait(driver,5).until(
                 EC.element_to_be_clickable((By.XPATH,"//img[@id='img_maisTwo']"))
@@ -230,9 +354,6 @@ def pegar_débitos_sp():
             )
 
             botao_OK.click()
-
-            sleep(3)
-
             
             try:
                 # Caminho onde a imagem do CAPTCHA será salva
@@ -255,7 +376,7 @@ def pegar_débitos_sp():
                 EC.element_to_be_clickable((By.XPATH, "//input[@id='ans']"))
             )
             campo.clear()  # Limpa qualquer valor anterior
-            campo.send_keys('1234')
+            campo.send_keys(captcha_resposta_2)
 
             # Submeter o CAPTCHA
             submit = WebDriverWait(driver, 5).until(
@@ -321,9 +442,7 @@ def pegar_débitos_sp():
 
                 except Exception:
                     print("Elemento do botão de envio se tornou obsoleto. Tentando localizá-lo novamente...")
-                    
-    
-
+                
             except TimeoutException:
                 print("CAPTCHA resolvido com sucesso.")
         
@@ -373,6 +492,7 @@ def pegar_débitos_sp():
 
         
             time.sleep(2)
+            salvar_progresso_sao_paulo(indice + 1)
         
     finally:
         driver.quit()
@@ -388,5 +508,152 @@ def aguardar_download(diretorio, timeout=5):
         time.sleep(1)
     return None
 
-# Executa a função
-pegar_débitos_sp()
+def processar_debitos():
+    try:
+    # Exemplo de chamada para o seu código que processa as informações de débitos
+        pegar_débitos_sp()
+        resultado_label.configure(text="Processo concluído com sucesso!", text_color="green")
+    except Exception as e:
+        resultado_label.configure(text=f"Erro: {str(e)}", text_color="red")
+
+# Função que inicia o processamento em uma thread separada para não travar a interface
+def iniciar_processo():
+    # Atualiza a interface para indicar que o processo está em andamento
+    global ultima_linha_processada
+
+    for i in range(5):
+        # Simulação de um processo que faz algo, como buscar dados de uma linha
+        ultima_linha_processada = f"Linha {i+1} processada"
+
+        if janela_aberta(app):
+            resultado_label.configure(text=f"Processando... {i+1}", text_color="yellow")
+            app.update_idletasks()  # Atualiza a interface
+            time.sleep(1)  # Simula o tempo de processamento
+        else:
+            break  # Caso a janela tenha sido fechada, pare o processamento
+    if janela_aberta(app):
+        resultado_label.configure(text="Processo concluído!", text_color="green")
+
+    if not janela_aberta(app):
+        print(f"Última linha processada: {ultima_linha_processada}")
+
+    resultado_label.configure(text="Processando... Aguarde.", text_color="yellow")
+    # Obtém o valor do campo de entrada, que é a linha inicial
+    try:
+        linha_inicial = int(entry_sao_paulo.get())  # Lê a linha inicial a partir da entrada
+        if linha_inicial < 2:
+            raise ValueError("A linha inicial deve ser maior ou igual a 2")
+    except ValueError as e:
+        resultado_label.configure(text=f"Erro: {e}", text_color="red")
+        return
+    
+    # Atualiza o progresso e inicia a execução
+    salvar_progresso_sao_paulo(linha_inicial)
+    atualizar_ultima_linha_sao_paulo()
+
+    # Começa o processo em uma thread separada para não travar a interface
+    process_thread = threading.Thread(target=processar_debitos)
+    process_thread.start()
+
+def thread_processo():
+    # Executa a função iniciar_processo em uma thread separada
+    threading.Thread(target=iniciar_processo, daemon=True).start()
+
+def janela_aberta(window):
+    return window.winfo_exists()
+
+def fechar_janela():
+    global ultima_linha_processada
+    # Atualize a última linha processada antes de fechar a janela
+    if ultima_linha_processada:
+        print(f"A janela foi fechada. Última linha processada: {ultima_linha_processada}")
+    app.quit()  # Fecha a janela
+
+ctk.set_appearance_mode("Dark")
+ctk.set_default_color_theme("dark-blue")
+
+app = ctk.CTk()
+app.title("Controle de Débitos Municipais")
+
+# Definindo a geometria da janela
+screen_width = app.winfo_screenwidth()
+screen_height = app.winfo_screenheight()
+app.geometry(f"{screen_width}x{screen_height-40}+0+0")
+
+# Título da janela
+title_label = ctk.CTkLabel(
+    app,
+    text="Controle de Débitos Municipais",
+    font=("Helvetica", 30, "bold"),
+    text_color="#ffffff"
+)
+title_label.pack(pady=20)
+
+# Frame principal
+main_frame = ctk.CTkFrame(app, fg_color="transparent")
+main_frame.pack(padx=20, pady=20, fill="both", expand=True)
+
+# Adicionando campos de entrada e botão de iniciar
+entry_sao_paulo = ctk.CTkEntry(
+    main_frame, 
+    placeholder_text="Digite a linha inicial do Excel para São Paulo", 
+    font=("Helvetica", 14), 
+    width=300
+)
+entry_sao_paulo.pack(pady=10)
+
+ultima_sao_paulo = ctk.CTkLabel(
+    app,
+    text="(Última linha processada: 2)",  # Valor inicial
+    font=("Helvetica", 12),
+    text_color="lightgray"
+)
+ultima_sao_paulo.pack(pady=10)
+
+# Resultado do processamento
+resultado_label = ctk.CTkLabel(
+    app,
+    text="Aguardando início...",
+    font=("Helvetica", 14),
+    text_color="yellow"
+)
+resultado_label.pack(pady=10)
+
+# Botão para iniciar o processamento
+iniciar_button = ctk.CTkButton(
+    app,
+    text="Iniciar Processamento",
+    command=iniciar_processo,
+    font=("Helvetica", 14),
+    width=300,
+    height=40,
+    fg_color="#007acc",
+    hover_color="#005b99"
+)
+iniciar_button.pack(pady=20)
+
+
+# Rodapé
+footer_label = ctk.CTkLabel(
+    app,
+    text="Desenvolvido por Luiz Fernando Hillebrande",
+    font=("Helvetica", 10),
+    text_color="#c9c9c9"
+)
+footer_label.pack(side="bottom", pady=25)
+
+# Função para sair da tela cheia
+def sair_tela_cheia(event=None):
+    app.attributes('-fullscreen', False)
+
+fechar_button = ctk.CTkButton(app, text="Fechar", command=fechar_janela)
+fechar_button.pack(pady=10)
+
+# Configura o fechamento da janela usando o protocolo WM_DELETE_WINDOW
+app.protocol("WM_DELETE_WINDOW", fechar_janela)
+
+
+app.bind("<Escape>", sair_tela_cheia)
+
+# Inicia o loop da interface gráfica
+app.mainloop()

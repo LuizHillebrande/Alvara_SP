@@ -239,9 +239,11 @@ def pegar_débitos_sp():
     sheet_wb = wb['São Paulo']
 
     try:
-        ultima_linha_sao_paulo = ler_progresso_sao_paulo()
-        for indice, linha in enumerate(sheet_wb.iter_rows(min_row=ultima_linha_sao_paulo, max_row=300)):  # Ajuste o intervalo conforme necessário
+        ultima_linha_processada_sao_paulo = ler_progresso_sao_paulo()
+        print(f"Iniciando da linha {ultima_linha_processada_sao_paulo}")
+        for indice, linha in enumerate(sheet_wb.iter_rows(min_row=ultima_linha_processada_sao_paulo, max_row=300)): 
             driver.get('https://senhawebsts.prefeitura.sp.gov.br/Account/Login.aspx?ReturnUrl=%2f%3fwa%3dwsignin1.0%26wtrealm%3dhttps%253a%252f%252fduc.prefeitura.sp.gov.br%252fportal%252f%26wctx%3drm%253d0%2526id%253dpassive%2526ru%253d%25252fportal%25252f%26wct%3d2024-12-16T11%253a48%253a11Z&wa=wsignin1.0&wtrealm=https%3a%2f%2fduc.prefeitura.sp.gov.br%2fportal%2f&wctx=rm%3d0%26id%3dpassive%26ru%3d%252fportal%252f&wct=2024-12-16T11%3a48%253a11Z')
+            salvar_progresso_sao_paulo(linha[0].row)
             sleep(2)
             login = linha[4].value
             senha = linha[5].value
@@ -321,7 +323,7 @@ def pegar_débitos_sp():
                     print(f"Erro ao tentar resolver o CAPTCHA: {e}")
                     continue
 
-            sleep(3)
+            sleep(5)
 
             try:
                 elemento_presente = WebDriverWait(driver, 4).until(
@@ -490,9 +492,9 @@ def pegar_débitos_sp():
             else:
                 print("Nenhum arquivo encontrado para renomear.")
 
-        
-            time.sleep(2)
             salvar_progresso_sao_paulo(indice + 1)
+            time.sleep(2)
+            
         
     finally:
         driver.quit()
@@ -563,10 +565,10 @@ def janela_aberta(window):
     return window.winfo_exists()
 
 def fechar_janela():
-    global ultima_linha_processada
+    global ultima_linha_processada_sao_paulo
     # Atualize a última linha processada antes de fechar a janela
-    if ultima_linha_processada:
-        print(f"A janela foi fechada. Última linha processada: {ultima_linha_processada}")
+    if ultima_linha_processada_sao_paulo:
+        print(f"A janela foi fechada. Última linha processada: {ultima_linha_processada_sao_paulo}")
     app.quit()  # Fecha a janela
 
 ctk.set_appearance_mode("Dark")
@@ -602,9 +604,11 @@ entry_sao_paulo = ctk.CTkEntry(
 )
 entry_sao_paulo.pack(pady=10)
 
+ultima_linha_processada_sao_paulo = ler_progresso_sao_paulo()
+
 ultima_sao_paulo = ctk.CTkLabel(
     app,
-    text="(Última linha processada: 2)",  # Valor inicial
+    text=f"(Última linha processada: {ultima_linha_processada_sao_paulo})",
     font=("Helvetica", 12),
     text_color="lightgray"
 )

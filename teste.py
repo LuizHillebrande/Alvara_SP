@@ -37,6 +37,13 @@ def atualizar_ultima_linha_sao_paulo():
     ultima_linha_sao_paulo = ler_progresso_sao_paulo()
     ultima_sao_paulo.configure(text=f"(Última linha processada: {ultima_linha_sao_paulo})")
 
+def atualizar_ultima_linha():
+    # Atualiza o texto do label com a última linha processada
+    ultima_sao_paulo.configure(text=f"(Última linha processada: {ultima_linha_processada_sao_paulo})")
+    # Agenda a atualização para o próximo intervalo (em milissegundos)
+    app.after(1000, atualizar_ultima_linha)  # Atualiza a cada 1 segundo (1000 ms)
+    
+
 def registrar_empresa_sem_debitos(nome_empresa, caminho_arquivo="empresas_sem_debitos.xlsx"):
     # Verifica se o arquivo já existe
     if not os.path.exists(caminho_arquivo):
@@ -358,95 +365,15 @@ def pegar_débitos_sp():
             botao_OK.click()
             
             try:
-                # Caminho onde a imagem do CAPTCHA será salva
-                caminho_captcha = "captcha_tela_inteira.png"
-
-                capturar_regiao_captcha(0, 0, 515, 250, caminho_captcha)
-                
-                # Resolver o CAPTCHA via 2Captcha
-                captcha_resposta_2 = resolver_captcha_2captcha(caminho_captcha)
-                print(f"Resposta do CAPTCHA: {captcha_resposta_2}")
-                
-                if not captcha_resposta_2:
-                    print("Falha ao resolver o CAPTCHA.")
-                    return
-            except Exception as e:
-                print(f"Ocorreu um erro ao resolver o CAPTCHA: {e}")
-
-            # Enviar a resposta para o campo
-            campo = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH, "//input[@id='ans']"))
-            )
-            campo.clear()  # Limpa qualquer valor anterior
-            campo.send_keys(captcha_resposta_2)
-
-            # Submeter o CAPTCHA
-            submit = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH, "//button[@id='jar']"))
-            )
-            submit.click()
-            
-            sleep(3)
-            # Verificar se o CAPTCHA foi aceito ou deu erro
-            try:
-                print('Verificando possível erro no captcha 2')
-                # Espera até 5 segundos pela mensagem de erro
-                mensagem_erro = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, "//body[contains(text(), 'Você digitou o código errado.')]"))
-                ) #ta certo!!
-                print("O CAPTCHA foi digitado incorretamente. Tentando novamente...")
-
-                # Se a mensagem de erro for encontrada, repetir o processo
-                capturar_regiao_captcha(0, 0, 515, 250, caminho_captcha)
-                captcha_resposta_2 = resolver_captcha_2captcha(caminho_captcha)
-                print(f"Nova resposta do CAPTCHA: {captcha_resposta_2}")
-                
-                campo = WebDriverWait(driver, 5).until(
-                    EC.element_to_be_clickable((By.XPATH, "//input[@id='ans']"))
+                elemento_presente = WebDriverWait(driver, 4).until(
+                    EC.presence_of_element_located((By.XPATH, "//input[@id='ans']"))
                 )
-                campo.clear()
-                campo.send_keys(captcha_resposta_2)
-                print('Captcha 2 preenchido')
                 
-                try:
-                    # Reencontrar o botão de envio antes de clicar
-                    submit = WebDriverWait(driver, 5).until(
-                        EC.element_to_be_clickable((By.XPATH, "//button[@id='jar']"))
-                    )
-                    submit.click()
-
-                    try:
-                        print('Verificando possível erro pela 3 vez no captcha 2')
-                        # Espera até 5 segundos pela mensagem de erro
-                        mensagem_erro = WebDriverWait(driver, 5).until(
-                            EC.presence_of_element_located((By.XPATH, "//body[contains(text(), 'Você digitou o código errado.')]"))
-                        ) #ta certo!!
-                        print("O CAPTCHA foi digitado incorretamente. Tentando novamente...")
-
-                        # Se a mensagem de erro for encontrada, repetir o processo
-                        capturar_regiao_captcha(0, 0, 515, 250, caminho_captcha)
-                        captcha_resposta_2 = resolver_captcha_2captcha(caminho_captcha)
-                        print(f"Nova resposta do CAPTCHA: {captcha_resposta_2}")
-                        
-                        campo = WebDriverWait(driver, 5).until(
-                            EC.element_to_be_clickable((By.XPATH, "//input[@id='ans']"))
-                        )
-                        campo.clear()
-                        campo.send_keys(captcha_resposta_2)
-                        print('Captcha 2 preenchido pela 3 vez')
-
-                        submit = WebDriverWait(driver, 5).until(
-                            EC.element_to_be_clickable((By.XPATH, "//button[@id='jar']"))
-                        )
-                        submit.click()
-                    except Exception:
-                        print('Erro nao encontrado pela 3 vez')
-
-                except Exception:
-                    print("Elemento do botão de envio se tornou obsoleto. Tentando localizá-lo novamente...")
-                
-            except TimeoutException:
-                print("CAPTCHA resolvido com sucesso.")
+                # Caso o elemento seja clicável, executa a função
+                caminho_captcha = "captcha_tela_inteira.png"  # Defina o caminho do captcha conforme necessário
+                verificar_captcha_2_completo(driver, caminho_captcha)
+            except Exception as e:
+                print("Elemento não encontrado ou não está clicável. Erro:", str(e))
         
 
             sleep(3)
@@ -613,6 +540,8 @@ ultima_sao_paulo = ctk.CTkLabel(
     text_color="lightgray"
 )
 ultima_sao_paulo.pack(pady=10)
+
+atualizar_ultima_linha()
 
 # Resultado do processamento
 resultado_label = ctk.CTkLabel(

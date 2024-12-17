@@ -14,6 +14,7 @@ import pyautogui
 import requests
 from selenium.common.exceptions import TimeoutException
 
+
 API_KEY = "62a06978600e98d3cbf430ffe18ea254"
 
 def registrar_empresa_sem_debitos(nome_empresa, caminho_arquivo="empresas_sem_debitos.xlsx"):
@@ -126,7 +127,7 @@ def pegar_débitos_sp():
     sheet_wb = wb['São Paulo']
 
     try:
-        for indice, linha in enumerate(sheet_wb.iter_rows(min_row=2, max_row=4)):  # Ajuste o intervalo conforme necessário
+        for indice, linha in enumerate(sheet_wb.iter_rows(min_row=9, max_row=10)):  # Ajuste o intervalo conforme necessário
             driver.get('https://senhawebsts.prefeitura.sp.gov.br/Account/Login.aspx?ReturnUrl=%2f%3fwa%3dwsignin1.0%26wtrealm%3dhttps%253a%252f%252fduc.prefeitura.sp.gov.br%252fportal%252f%26wctx%3drm%253d0%2526id%253dpassive%2526ru%253d%25252fportal%25252f%26wct%3d2024-12-16T11%253a48%253a11Z&wa=wsignin1.0&wtrealm=https%3a%2f%2fduc.prefeitura.sp.gov.br%2fportal%2f&wctx=rm%3d0%26id%3dpassive%26ru%3d%252fportal%252f&wct=2024-12-16T11%3a48%253a11Z')
             sleep(2)
             login = linha[4].value
@@ -253,22 +254,23 @@ def pegar_débitos_sp():
             campo = WebDriverWait(driver, 5).until(
                 EC.element_to_be_clickable((By.XPATH, "//input[@id='ans']"))
             )
-            campo.click()
             campo.clear()  # Limpa qualquer valor anterior
-            campo.send_keys(captcha_resposta_2)
+            campo.send_keys('1234')
 
             # Submeter o CAPTCHA
             submit = WebDriverWait(driver, 5).until(
                 EC.element_to_be_clickable((By.XPATH, "//button[@id='jar']"))
             )
             submit.click()
-
+            
+            sleep(3)
             # Verificar se o CAPTCHA foi aceito ou deu erro
             try:
+                print('Verificando possível erro no captcha 2')
                 # Espera até 5 segundos pela mensagem de erro
-                mensagem_erro = WebDriverWait(driver, 5).until(
-                    EC.presence_of_element_located((By.XPATH, "//span[@id='formBody_formBody_RecaptchaValidator' and contains(text(), 'Você digitou o código errado')]"))
-                )
+                mensagem_erro = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, "//body[contains(text(), 'Você digitou o código errado.')]"))
+                ) #ta certo!!
                 print("O CAPTCHA foi digitado incorretamente. Tentando novamente...")
 
                 # Se a mensagem de erro for encontrada, repetir o processo
@@ -281,20 +283,59 @@ def pegar_débitos_sp():
                 )
                 campo.clear()
                 campo.send_keys(captcha_resposta_2)
-                submit.click()
+                print('Captcha 2 preenchido')
+                
+                try:
+                    # Reencontrar o botão de envio antes de clicar
+                    submit = WebDriverWait(driver, 5).until(
+                        EC.element_to_be_clickable((By.XPATH, "//button[@id='jar']"))
+                    )
+                    submit.click()
+
+                    try:
+                        print('Verificando possível erro pela 3 vez no captcha 2')
+                        # Espera até 5 segundos pela mensagem de erro
+                        mensagem_erro = WebDriverWait(driver, 5).until(
+                            EC.presence_of_element_located((By.XPATH, "//body[contains(text(), 'Você digitou o código errado.')]"))
+                        ) #ta certo!!
+                        print("O CAPTCHA foi digitado incorretamente. Tentando novamente...")
+
+                        # Se a mensagem de erro for encontrada, repetir o processo
+                        capturar_regiao_captcha(0, 0, 515, 250, caminho_captcha)
+                        captcha_resposta_2 = resolver_captcha_2captcha(caminho_captcha)
+                        print(f"Nova resposta do CAPTCHA: {captcha_resposta_2}")
+                        
+                        campo = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.XPATH, "//input[@id='ans']"))
+                        )
+                        campo.clear()
+                        campo.send_keys(captcha_resposta_2)
+                        print('Captcha 2 preenchido pela 3 vez')
+
+                        submit = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.XPATH, "//button[@id='jar']"))
+                        )
+                        submit.click()
+                    except Exception:
+                        print('Erro nao encontrado pela 3 vez')
+
+                except Exception:
+                    print("Elemento do botão de envio se tornou obsoleto. Tentando localizá-lo novamente...")
+                    
+    
 
             except TimeoutException:
                 print("CAPTCHA resolvido com sucesso.")
-            
+        
 
             sleep(3)
             
             #print(driver.page_source)
 
             driver.switch_to.default_content()
-            sleep(5)
+
             try:
-                pagar = WebDriverWait(driver,5).until(
+                pagar = WebDriverWait(driver,4).until(
                     EC.element_to_be_clickable((By.XPATH,"//input[@name='ctl00$ctl00$ConteudoPrincipal$ContentPlaceHolder1$btnPagar']"))
                 )
 
@@ -306,10 +347,10 @@ def pegar_débitos_sp():
                 except Exception:
                     print("Nenhum alerta foi encontrado.")
                 
-                sleep(4)
+                sleep(2)
                 pyautogui.hotkey('ctrl', 'w')
 
-                WebDriverWait(driver, 10).until(lambda driver: len(driver.window_handles) > 0)
+                WebDriverWait(driver, 5).until(lambda driver: len(driver.window_handles) > 0)
 
                 # Alternar para a última janela que permanece aberta
                 driver.switch_to.window(driver.window_handles[-1])
@@ -336,7 +377,7 @@ def pegar_débitos_sp():
     finally:
         driver.quit()
 
-def aguardar_download(diretorio, timeout=60):
+def aguardar_download(diretorio, timeout=5):
     """ Aguarda o download do arquivo terminar e retorna o caminho do arquivo baixado. """
     tempo_inicial = time.time()
     while time.time() - tempo_inicial < timeout:

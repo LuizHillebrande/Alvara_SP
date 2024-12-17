@@ -12,6 +12,7 @@ from time import sleep
 import glob
 import pyautogui
 import requests
+from selenium.common.exceptions import TimeoutException
 
 API_KEY = "62a06978600e98d3cbf430ffe18ea254"
 
@@ -119,17 +120,23 @@ def pegar_débitos_sp():
     # Inicializa o driver
     service = Service()
     driver = webdriver.Chrome(service=service, options=chrome_options)
-    driver.get('https://senhawebsts.prefeitura.sp.gov.br/Account/Login.aspx?ReturnUrl=%2f%3fwa%3dwsignin1.0%26wtrealm%3dhttps%253a%252f%252fduc.prefeitura.sp.gov.br%252fportal%252f%26wctx%3drm%253d0%2526id%253dpassive%2526ru%253d%25252fportal%25252f%26wct%3d2024-12-16T11%253a48%253a11Z&wa=wsignin1.0&wtrealm=https%3a%2f%2fduc.prefeitura.sp.gov.br%2fportal%2f&wctx=rm%3d0%26id%3dpassive%26ru%3d%252fportal%252f&wct=2024-12-16T11%3a48%253a11Z')
-
-
+    driver.maximize_window()
+    
     wb = openpyxl.load_workbook('dados_sp.xlsx')
     sheet_wb = wb['São Paulo']
+
     try:
-        for indice, linha in enumerate(sheet_wb.iter_rows(min_row=9, max_row=10)):  # Ajuste o intervalo conforme necessário
+        for indice, linha in enumerate(sheet_wb.iter_rows(min_row=2, max_row=4)):  # Ajuste o intervalo conforme necessário
+            driver.get('https://senhawebsts.prefeitura.sp.gov.br/Account/Login.aspx?ReturnUrl=%2f%3fwa%3dwsignin1.0%26wtrealm%3dhttps%253a%252f%252fduc.prefeitura.sp.gov.br%252fportal%252f%26wctx%3drm%253d0%2526id%253dpassive%2526ru%253d%25252fportal%25252f%26wct%3d2024-12-16T11%253a48%253a11Z&wa=wsignin1.0&wtrealm=https%3a%2f%2fduc.prefeitura.sp.gov.br%2fportal%2f&wctx=rm%3d0%26id%3dpassive%26ru%3d%252fportal%252f&wct=2024-12-16T11%3a48%253a11Z')
+            sleep(2)
             login = linha[4].value
             senha = linha[5].value
             ccm = linha[3].value
             nome_empresa = linha[0].value
+
+            if not login or str(login).strip() == "-":
+                print(f"Linha {indice + 1}: Login inválido ou ausente. Pulando para a próxima linha.")
+                continue  # Pula para a próxima iteração
 
             # Preencher Login
             clicar_login = WebDriverWait(driver, 5).until(
@@ -145,37 +152,63 @@ def pegar_débitos_sp():
             )
             clicar_senha.send_keys(str(senha))
             
-            try:
-                # Captura a região do CAPTCHA
-                captcha_path = "captcha_regiao.png"
-                capturar_regiao_captcha(428, 455, 780, 600, captcha_path)  # regiao exata
-                
-                # Resolver o CAPTCHA via 2Captcha
-                captcha_resposta = resolver_captcha_2captcha(captcha_path)
-                print(captcha_resposta)
-                if not captcha_resposta:
-                    print("Falha ao resolver o CAPTCHA.")
-                    return
-                
-                # Preencher o formulário
-                campo_captcha = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.XPATH,"//input[@name='ctl00$ctl00$formBody$formBody$wucRecaptcha1$txtValidacao']"))
-                )
-                campo_captcha.click()
-                campo_captcha.send_keys(captcha_resposta)  
-                
-                print("CAPTCHA preenchido com sucesso.")
-                
-                botao_submit = WebDriverWait(driver, 5).until(
-                    EC.element_to_be_clickable((By.XPATH, "//input[@name='ctl00$ctl00$formBody$formBody$btnLogin']"))
-                )
-                botao_submit.click()
+            while True:  # Loop para resolver o CAPTCHA até passar
+                try:
+                    # Captura a região do CAPTCHA
+                    captcha_path = "captcha_regiao.png"
+                    capturar_regiao_captcha(428, 455, 780, 600, captcha_path)  # Região exata do CAPTCHA
+                    
+                    # Resolver o CAPTCHA via 2Captcha
+                    captcha_resposta = resolver_captcha_2captcha(captcha_path)
+                    
+                    if not captcha_resposta:
+                        print("Falha ao resolver o CAPTCHA.")
+                        continue  # Volta para o início do loop para tentar novamente
 
-            except Exception as e:
-                print('Captcha não encontrado')
-            
-            
+                    # Preencher o campo do CAPTCHA
+                    campo_captcha = WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.XPATH, "//input[@name='ctl00$ctl00$formBody$formBody$wucRecaptcha1$txtValidacao']"))
+                    )
+                    campo_captcha.clear()  # Limpa o campo caso tenha algo
+                    campo_captcha.send_keys(captcha_resposta)
+
+                    # Clicar no botão de login
+                    botao_submit = WebDriverWait(driver, 5).until(
+                        EC.element_to_be_clickable((By.XPATH, "//input[@name='ctl00$ctl00$formBody$formBody$btnLogin']"))
+                    )
+                    botao_submit.click()
+
+                    sleep(3)  # Espera carregar a página após o envio do CAPTCHA
+
+                    # Verificar se a mensagem de erro do CAPTCHA apareceu
+                    mensagem_erro = driver.find_elements(By.XPATH, "//span[@id='formBody_formBody_RecaptchaValidator' and contains(@class, 'label-danger')]")
+                    if mensagem_erro:
+                        print("CAPTCHA incorreto, tentando novamente...")
+                        clicar_login = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.XPATH, "//input[@name='ctl00$ctl00$formBody$formBody$txtUser']"))
+                        )
+                        clicar_login.clear()
+                        clicar_login.send_keys(str(login))
+
+                        sleep(2)
+
+                        # Preencher Senha
+                        clicar_senha = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.XPATH, "//input[@name='ctl00$ctl00$formBody$formBody$txtPassword']"))
+                        )
+                        clicar_senha.clear()
+                        clicar_senha.send_keys(str(senha))
+                        continue  # Se a mensagem de erro apareceu, tenta resolver novamente
+                    else:
+                        print("CAPTCHA resolvido com sucesso!")
+                        break  # Sai do loop se não houver mensagem de erro
+
+                except Exception as e:
+                    print(f"Erro ao tentar resolver o CAPTCHA: {e}")
+                    continue
+
             sleep(3)
+            
             botao_mais = WebDriverWait(driver,5).until(
                 EC.element_to_be_clickable((By.XPATH,"//img[@id='img_maisTwo']"))
             )
@@ -203,33 +236,59 @@ def pegar_débitos_sp():
             try:
                 # Caminho onde a imagem do CAPTCHA será salva
                 caminho_captcha = "captcha_tela_inteira.png"
-                
-                
+
                 capturar_regiao_captcha(0, 0, 515, 250, caminho_captcha)
                 
                 # Resolver o CAPTCHA via 2Captcha
                 captcha_resposta_2 = resolver_captcha_2captcha(caminho_captcha)
-                print(captcha_resposta_2)
+                print(f"Resposta do CAPTCHA: {captcha_resposta_2}")
                 
                 if not captcha_resposta_2:
                     print("Falha ao resolver o CAPTCHA.")
                     return
             except Exception as e:
-                print(f"Ocorreu um erro: {e}")
+                print(f"Ocorreu um erro ao resolver o CAPTCHA: {e}")
 
-            campo = WebDriverWait(driver,5).until(
-                EC.element_to_be_clickable((By.XPATH,"//input[@id='ans']"))
+            # Enviar a resposta para o campo
+            campo = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, "//input[@id='ans']"))
             )
             campo.click()
+            campo.clear()  # Limpa qualquer valor anterior
             campo.send_keys(captcha_resposta_2)
-            
 
-            submit = WebDriverWait(driver,5).until(
-                EC.element_to_be_clickable((By.XPATH,"//button[@id='jar']"))
+            # Submeter o CAPTCHA
+            submit = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[@id='jar']"))
             )
             submit.click()
+
+            # Verificar se o CAPTCHA foi aceito ou deu erro
+            try:
+                # Espera até 5 segundos pela mensagem de erro
+                mensagem_erro = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, "//span[@id='formBody_formBody_RecaptchaValidator' and contains(text(), 'Você digitou o código errado')]"))
+                )
+                print("O CAPTCHA foi digitado incorretamente. Tentando novamente...")
+
+                # Se a mensagem de erro for encontrada, repetir o processo
+                capturar_regiao_captcha(0, 0, 515, 250, caminho_captcha)
+                captcha_resposta_2 = resolver_captcha_2captcha(caminho_captcha)
+                print(f"Nova resposta do CAPTCHA: {captcha_resposta_2}")
+                
+                campo = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.XPATH, "//input[@id='ans']"))
+                )
+                campo.clear()
+                campo.send_keys(captcha_resposta_2)
+                submit.click()
+
+            except TimeoutException:
+                print("CAPTCHA resolvido com sucesso.")
             
 
+            sleep(3)
+            
             #print(driver.page_source)
 
             driver.switch_to.default_content()
@@ -247,20 +306,20 @@ def pegar_débitos_sp():
                 except Exception:
                     print("Nenhum alerta foi encontrado.")
                 
-                sleep(2)
+                sleep(4)
                 pyautogui.hotkey('ctrl', 'w')
 
                 WebDriverWait(driver, 10).until(lambda driver: len(driver.window_handles) > 0)
 
                 # Alternar para a última janela que permanece aberta
                 driver.switch_to.window(driver.window_handles[-1])
-                driver.get('https://senhawebsts.prefeitura.sp.gov.br/Account/Login.aspx?ReturnUrl=%2f%3fwa%3dwsignin1.0%26wtrealm%3dhttps%253a%252f%252fduc.prefeitura.sp.gov.br%252fportal%252f%26wctx%3drm%253d0%2526id%253dpassive%2526ru%253d%25252fportal%25252f%26wct%3d2024-12-16T11%253a48%253a11Z&wa=wsignin1.0&wtrealm=https%3a%2f%2fduc.prefeitura.sp.gov.br%2fportal%2f&wctx=rm%3d0%26id%3dpassive%26ru%3d%252fportal%252f&wct=2024-12-16T11%3a48%253a11Z')
+                
             
             except Exception as e:
                 nome_empresa = linha[0].value  # Captura o nome da empresa na planilha original
                 print(f"Empresa '{nome_empresa}' sem débitos.")
                 registrar_empresa_sem_debitos(nome_empresa)
-                driver.get('https://senhawebsts.prefeitura.sp.gov.br/Account/Login.aspx?ReturnUrl=%2f%3fwa%3dwsignin1.0%26wtrealm%3dhttps%253a%252f%252fduc.prefeitura.sp.gov.br%252fportal%252f%26wctx%3drm%253d0%2526id%253dpassive%2526ru%253d%25252fportal%25252f%26wct%3d2024-12-16T11%253a48%253a11Z&wa=wsignin1.0&wtrealm=https%3a%2f%2fduc.prefeitura.sp.gov.br%2fportal%2f&wctx=rm%3d0%26id%3dpassive%26ru%3d%252fportal%252f&wct=2024-12-16T11%3a48%253a11Z')
+                
 
             arquivo_antigo = aguardar_download(download_path)
             if arquivo_antigo:
@@ -272,7 +331,7 @@ def pegar_débitos_sp():
                 print("Nenhum arquivo encontrado para renomear.")
 
         
-            time.sleep(5)
+            time.sleep(2)
         
     finally:
         driver.quit()
